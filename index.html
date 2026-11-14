@@ -40,6 +40,8 @@ main{max-width:560px;margin:0 auto;padding:14px 16px 0}
 .bd{display:flex;justify-content:space-between;padding:9px 0;border-top:.5px solid var(--sep);font-size:16px}
 .bd span:first-child{color:var(--mute)}
 .bd span:last-child{font-weight:600}
+.bd.tot span{color:var(--ink);font-weight:700}
+.bd.cov span{color:var(--greenInk);font-weight:600}
 .status{border-radius:22px;padding:16px;margin-bottom:12px;font-size:15px}
 .status.ok{background:rgba(52,199,89,.16);color:var(--greenInk)}
 .status.warn{background:rgba(255,149,0,.16);color:#9A5200}
@@ -126,7 +128,8 @@ const pd=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
 const num=v=>{const n=parseFloat(v);return isFinite(n)&&n>0?n:0};
 const r2=n=>Math.round(n*100)/100;
 const money=n=>'₪'+r2(n).toLocaleString('he-IL',{maximumFractionDigits:2});
-const hrs=n=>r2(n).toLocaleString('he-IL',{maximumFractionDigits:2});
+const hrs=n=>{const m=Math.round(n*60);return Math.floor(m/60)+':'+pad(m%60)};
+const rng=s=>`מ־${s.start} עד ${s.end}`;
 const pt=s=>{const m=/^(\d{2}):(\d{2})$/.exec(s||'');return m&&+m[1]<24&&+m[2]<60?+m[1]*60+ +m[2]:null};
 const calcH=(s,e)=>{const a=pt(s),b=pt(e);if(a===null||b===null)return 0;let d=b-a;if(d<0)d+=1440;return d/60};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -175,13 +178,23 @@ function calc(y,m){
   return {list,hours,tips,days:days.size,required,travel,target,offset,pay,net};
 }
 
+function dayStat(date){
+  let h=0,t=0;S.shifts.forEach(s=>{if(s.date===date){h+=calcH(s.start,s.end);t+=s.cash||0}});
+  const target=h*(S.settings.minWage||0)+(S.settings.travel||0);
+  return {t,target,gap:Math.max(0,target-t),ok:t>=target};
+}
+function dayStatusHTML(date,label){
+  const d=dayStat(date),pre=label?label+': ':'';
+  if(d.ok)return `<div class="status ok"><strong>${pre}הטיפים מכסים הכל</strong>טיפים ${money(d.t)} מול ${money(d.target)} (מינימום ונסיעות).<div class="bar"><i style="width:100%"></i></div></div>`;
+  return `<div class="status warn"><strong>${pre}חסרים ${money(d.gap)} לכיסוי</strong>טיפים ${money(d.t)} מול ${money(d.target)} (מינימום ונסיעות). ההשלמה בפועל נקבעת לפי סך החודש.<div class="bar"><i style="width:${Math.min(100,d.t/d.target*100)}%"></i></div></div>`;
+}
 function render(){
   $('#mlabel').textContent=new Date(vy,vm,1).toLocaleDateString('he-IL',{month:'long',year:'numeric'});
   const c=calc(vy,vm);
   let status;
-  if(!c.hours) status=`<div class="status idle"><strong>אין משמרות בחודש הזה</strong>אפשר להוסיף משמרת כדי לראות את החישוב.</div>`;
-  else if(c.pay>0) status=`<div class="status warn"><strong>המעסיק משלים בתלוש: ${money(c.pay)}</strong>הטיפים (${money(c.tips)}) מכסים חלק מהמינימום והנסיעות (${money(c.target)}).<div class="bar"><i style="width:${Math.min(100,c.tips/c.target*100)}%"></i></div></div>`;
-  else status=`<div class="status ok"><strong>הטיפים מכסים הכל, אין תלוש</strong>הטיפים (${money(c.tips)}) עוברים את המינימום והנסיעות (${money(c.target)}).<div class="bar"><i style="width:100%"></i></div></div>`;
+  const dts=[...new Set(c.list.map(s=>s.date))].sort();
+  if(!dts.length) status=`<div class="status idle"><strong>אין משמרות בחודש הזה</strong>אפשר להוסיף משמרת כדי לראות את החישוב.</div>`;
+  else{const t0=todayStr(),pick=dts.includes(t0)?t0:dts[dts.length-1];status=dayStatusHTML(pick,pick===t0?'היום':dlabel(pick,{weekday:'short',day:'numeric'}))}
 
   const first=new Date(vy,vm,1).getDay(),dim=new Date(vy,vm+1,0).getDate(),ts=todayStr();
   const byDay={};c.list.forEach(s=>{byDay[s.date]=(byDay[s.date]||0)+calcH(s.start,s.end)});
@@ -191,7 +204,7 @@ function render(){
     const k=ds(vy,vm,d),h=byDay[k];
     cells+=`<button class="day${h?' has':''}${k===ts?' today':''}" data-a="day" data-d="${k}" aria-label="${d}">${d}${h?`<small>${hrs(h)}</small>`:''}</button>`;
   }
-  const rows=c.list.map(s=>`<button class="row" data-a="edit" data-id="${s.id}"><span class="d">${dlabel(s.date,{weekday:'short',day:'numeric'})}</span><span class="m"><b>${s.start}–${s.end}</b>${hrs(calcH(s.start,s.end))} שעות</span><span class="tp">${money(s.cash||0)}</span><span class="ed">עריכה</span>${CHEV}</button>`).join('');
+  const rows=c.list.map(s=>`<button class="row" data-a="edit" data-id="${s.id}"><span class="d">${dlabel(s.date,{weekday:'short',day:'numeric'})}</span><span class="m"><b>${rng(s)}</b>${hrs(calcH(s.start,s.end))} שעות</span><span class="tp">${money(s.cash||0)}</span><span class="ed">עריכה</span>${CHEV}</button>`).join('');
 
   $('#app').innerHTML=`
   <section class="hero"><div class="hl">ממוצע רווח לשעה (נטו בפועל)</div><div class="big">${c.hours?money(c.net):'—'}</div><div class="sub">מזומן ביד + צפי תלוש, חלקי ${hrs(c.hours)} שעות</div></section>
@@ -202,7 +215,8 @@ function render(){
   <section class="card pay"><span class="t">צפי לתלוש מהמעסיק</span><b class="v">${money(c.pay)}</b>
     <div class="bd"><span>שכר מינימום לשעות</span><span>${money(c.required)}</span></div>
     <div class="bd"><span>החזרי נסיעות</span><span>${money(c.travel)}</span></div>
-    <div class="bd"><span>קיזוז בגלל הטיפים</span><span>${c.offset>0?'−':''}${money(c.offset)}</span></div>
+    <div class="bd tot"><span>סה"כ מובטח בתלוש</span><span>${money(c.target)}</span></div>
+    <div class="bd cov"><span>כבר מכוסה מהטיפים</span><span>✓ ${money(c.offset)}</span></div>
   </section>
   ${status}
   <section class="cal"><div class="wk">${['א','ב','ג','ד','ה','ו','ש'].map(x=>`<div>${x}</div>`).join('')}</div><div class="days">${cells}</div></section>
@@ -257,8 +271,8 @@ function saveForm(){
 function openDay(date){
   const list=S.shifts.filter(s=>s.date===date).sort((a,b)=>a.start.localeCompare(b.start));
   if(!list.length){openForm(null,date);return}
-  openSheet(`<h2>${dlabel(date,{weekday:'long',day:'numeric',month:'long'})}</h2><div class="list">`+
-    list.map(s=>`<button class="row" data-a="edit" data-id="${s.id}"><span class="m"><b>${s.start}–${s.end}</b>${hrs(calcH(s.start,s.end))} שעות</span><span class="tp">${money(s.cash||0)}</span><span class="ed">עריכה</span>${CHEV}</button>`).join('')+
+  openSheet(`<h2>${dlabel(date,{weekday:'long',day:'numeric',month:'long'})}</h2>${dayStatusHTML(date,'')}<div class="list">`+
+    list.map(s=>`<button class="row" data-a="edit" data-id="${s.id}"><span class="m"><b>${rng(s)}</b>${hrs(calcH(s.start,s.end))} שעות</span><span class="tp">${money(s.cash||0)}</span><span class="ed">עריכה</span>${CHEV}</button>`).join('')+
     `</div><button class="btn primary" data-a="adddate" data-d="${date}">הוספת משמרת ליום הזה</button><button class="btn ghost" data-a="close">סגירה</button>`);
 }
 function openSettings(){
@@ -277,7 +291,7 @@ function openSettings(){
 function summaryText(){
   const c=calc(vy,vm),name=new Date(vy,vm,1).toLocaleDateString('he-IL',{month:'long',year:'numeric'});
   const L=[`*סיכום משמרות – ${name}*`,''];
-  c.list.forEach(s=>L.push(`• ${dlabel(s.date,{weekday:'short',day:'numeric',month:'numeric'})}: ${s.start}–${s.end} (${hrs(calcH(s.start,s.end))} שעות), טיפים ${money(s.cash||0)}`));
+  c.list.forEach(s=>L.push(`• ${dlabel(s.date,{weekday:'short',day:'numeric',month:'numeric'})}: ${rng(s)} (${hrs(calcH(s.start,s.end))} שעות), טיפים ${money(s.cash||0)}`));
   L.push('','*סיכום*',
     `סה"כ שעות: ${hrs(c.hours)} (${c.days} ימי עבודה)`,
     `סה"כ טיפים (מזומן ביד): ${money(c.tips)}`,
